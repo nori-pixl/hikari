@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>光センサー データロガー</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 40px; background: #f9f9f9; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .realtime-box { font-size: 1.2rem; margin-bottom: 20px; padding: 10px; background: #eef5ff; border-radius: 6px; }
+        #current-lx { font-weight: bold; color: #0066cc; font-size: 1.8rem; }
+        #result-area { font-family: monospace; font-size: 1.1rem; margin: 20px 0; padding: 15px; border: 1px solid #ccc; background: #fafafa; min-height: 80px; max-height: 150px; overflow-y: auto; word-break: break-all; border-radius: 6px; text-align: left; }
+        .btn-group { display: flex; justify-content: center; gap: 10px; }
+        button { font-size: 1rem; font-weight: bold; padding: 12px 24px; cursor: pointer; border: none; border-radius: 6px; transition: background 0.2s; }
+        #start-btn { background: #007bff; color: white; }
+        #start-btn.recording { background: #dc3545; } /* 記録中は赤色 */
+        #copy-btn { background: #28a745; color: white; }
+        button:disabled { background: #ccc !important; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>光センサー データロガー</h2>
+    
+    <!-- 現在のリアルタイムな明るさ -->
+    <div class="realtime-box">
+        現在の照度: <span id="current-lx">--</span> lx
+    </div>
+
+    <!-- 0.5秒ずつ繋がっていくログ表示エリア -->
+    <div id="result-area">「測定開始」を押すと、ここに0.5秒ごとのデータがカンマ区切りで蓄積されます。</div>
+
+    <div class="btn-group">
+        <button id="start-btn">測定開始</button>
+        <button id="copy-btn" disabled>データをコピー</button>
+    </div>
+</div>
+
+<script>
+    let sensor = null;
+    let timer = null;
+    let loggedData = []; // 取得した数値を溜める配列
+    let latestLx = 0;    // 常に最新のlx値を保持する変数
+
+    const startBtn = document.getElementById('start-btn');
+    const copyBtn = document.getElementById('copy-btn');
+    const resultArea = document.getElementById('result-area');
+    const currentLxSpan = document.getElementById('current-lx');
+
+    // 1. ページ読み込み時に光センサーを初期化
+    if ('AmbientLightSensor' in window) {
+        try {
+            // セキュリティや権限エラーをキャッチするためにtry-catchを使用
+            sensor = new AmbientLightSensor();
+            
+            // センサーの値が更新されたら、最新値を常に変数へ保存
+            sensor.onreading = () => {
+                latestLx = sensor.illuminance;
+                currentLxSpan.textContent = latestLx;
+            };
+
+            sensor.onerror = (event) => {
+                resultArea.textContent = `センサーエラー: ${event.error.message}\n(※HTTPS通信やスマホのブラウザ設定を確認してください)`;
+                startBtn.disabled = true;
+            };
+
+            sensor.start();
+
+        } catch (err) {
+            resultArea.textContent = `初期化失敗: ${err.message}`;
+            startBtn.disabled = true;
+        }
+    } else {
+        resultArea.textContent = "このブラウザ・端末は光センサー（AmbientLightSensor）に対応していません。";
+        startBtn.disabled = true;
+    }
+
+    // 2. 測定開始 / 停止ボタンの処理
+    startBtn.addEventListener('click', () => {
+        // 現在記録中の場合は「停止」させる
+        if (timer) {
+            clearInterval(timer);
+            timer = null;
+            startBtn.textContent = "測定開始";
+            startBtn.classList.remove('recording');
+            if (loggedData.length > 0) {
+                copyBtn.disabled = false; // データがあればコピーボタンを有効化
+            }
+            return;
+        }
+
+        // 新しく測定を開始する場合（初期化）
+        loggedData = [];
+        resultArea.textContent = "測定中...";
+        copyBtn.disabled = true;
+        startBtn.textContent = "測定停止";
+        startBtn.classList.add('recording');
+
+        // 0.5秒（500ミリ秒）ごとに最新のセンサー値を配列に追加して表示
+        timer = setInterval(() => {
+            // 現在の最新値を配列に保存
+            loggedData.push(latestLx);
+            // カンマ区切りで画面に出力
+            resultArea.textContent = loggedData.join(',');
+            // 自動で一番下までスクロール
+            resultArea.scrollTop = resultArea.scrollHeight;
+        }, 500);
+    });
+
+    // 3. コピーボタンの処理
+    copyBtn.addEventListener('click', () => {
+        const textToCopy = resultArea.textContent;
+        
+        navigator.clipboard.writeText(textToCopy)
+            .then(() => {
+                alert("データをクリップボードにコピーしました！\n件数: " + loggedData.length + "件");
+            })
+            .catch(err => {
+                alert("コピーに失敗しました: " + err);
+            });
+    });
+</script>
+
+</body>
+</html>
